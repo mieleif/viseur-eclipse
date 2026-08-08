@@ -20,8 +20,10 @@ AddType image/svg+xml .svg
   # DirectorySlash reste actif : si cette regle ne s'applique pas, mod_dir
   # reprend la main et le proxy rebascule en https. Aucun risque de servir la
   # page sans slash final, ce qui casserait tous les chemins relatifs.
+  # La condition sur REQUEST_URI cible exactement l'URL sans slash final, ce
+  # qui interdit toute boucle sur les requetes internes au dossier.
   RewriteCond %{REQUEST_URI} ^/eclipse$
-  RewriteRule ^$ https://%{HTTP_HOST}/eclipse/ [R=301,L]
+  RewriteRule ^ https://%{HTTP_HOST}/eclipse/ [R=301,L]
 </IfModule>
 
 <IfModule mod_headers.c>
