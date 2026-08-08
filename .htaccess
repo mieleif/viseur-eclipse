@@ -11,6 +11,19 @@
 AddType application/manifest+json .webmanifest
 AddType image/svg+xml .svg
 
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  # Derriere un proxy qui termine le TLS, Apache ne sait pas que la requete
+  # d'origine etait chiffree : la redirection « ajout du slash final » de
+  # mod_dir part alors en http://. On la devance en imposant https.
+  #
+  # DirectorySlash reste actif : si cette regle ne s'applique pas, mod_dir
+  # reprend la main et le proxy rebascule en https. Aucun risque de servir la
+  # page sans slash final, ce qui casserait tous les chemins relatifs.
+  RewriteCond %{REQUEST_URI} ^/eclipse$
+  RewriteRule ^$ https://%{HTTP_HOST}/eclipse/ [R=301,L]
+</IfModule>
+
 <IfModule mod_headers.c>
   # Ne jamais figer le service worker dans le cache HTTP : c'est lui qui
   # decide de la fraicheur du reste, une version epinglee bloquerait toute
