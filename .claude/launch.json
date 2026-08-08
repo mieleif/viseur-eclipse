@@ -1,10 +1,10 @@
-{
+﻿{
   "version": "0.0.1",
   "configurations": [
     {
       "name": "eclipse",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["-y", "serve", "-l", "5174", "C:/Users/Leif/Desktop/Pro/eclipse-toit"],
+      "runtimeArgs": ["-y", "serve", "-l", "5174", "C:/Users/Leif/Desktop/Pro/viseur-eclipse"],
       "port": 5174
     }
   ]

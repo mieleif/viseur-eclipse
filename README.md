@@ -1,4 +1,4 @@
-# Viseur d'éclipse
+# Voir l'éclipse
 
 Application web mobile qui superpose la **trajectoire du Soleil éclipsé** sur le
 flux de la caméra du téléphone, pour répondre à une seule question : *depuis
