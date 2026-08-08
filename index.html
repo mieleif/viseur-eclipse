@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0b0d14">
+<meta name="description" content="Ou sera l'eclipse dans mon ciel ? Realite augmentee : trajectoire du Soleil eclipse projetee sur la camera du telephone.">
+<title>Éclipse sur mon toit</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ------------------------------------------------ ecran d'accueil -->
+<section id="intro" class="screen">
+  <div class="intro-inner">
+    <h1>Éclipse sur mon toit</h1>
+    <p class="lede">
+      Pointe ton téléphone vers le ciel : l'app trace la trajectoire du Soleil
+      éclipsé et te dit si un toit, un arbre ou un immeuble te la cachera.
+    </p>
+
+    <div id="introSummary" class="summary" hidden></div>
+
+    <button id="btnStart" class="primary">Activer la caméra et la boussole</button>
+    <button id="btnMapOnly" class="ghost">Sans caméra — vue carte</button>
+
+    <p class="fineprint">
+      La caméra et les capteurs restent sur l'appareil : aucune donnée n'est
+      envoyée nulle part. Ne regarde jamais le Soleil sans lunettes éclipse
+      certifiées ISO&nbsp;12312-2.
+    </p>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------ vue principale -->
+<main id="stage" hidden>
+  <video id="cam" playsinline muted autoplay></video>
+  <canvas id="overlay"></canvas>
+
+  <!-- bandeau haut -->
+  <header id="hud">
+    <div class="hud-row">
+      <div class="hud-block">
+        <span class="label">Heure simulée</span>
+        <strong id="hudTime">--:--</strong>
+      </div>
+      <div class="hud-block">
+        <span class="label">Soleil couvert</span>
+        <strong id="hudObsc">--</strong>
+      </div>
+      <div class="hud-block">
+        <span class="label">Hauteur</span>
+        <strong id="hudAlt">--</strong>
+      </div>
+      <div class="hud-block">
+        <span class="label">Azimut</span>
+        <strong id="hudAz">--</strong>
+      </div>
+      <button id="btnSettings" class="icon-btn" aria-label="Réglages">☰</button>
+    </div>
+    <div id="verdict" class="verdict"></div>
+  </header>
+
+  <!-- vignette agrandie de la phase -->
+  <canvas id="phase" width="150" height="150" aria-label="Phase de l'éclipse"></canvas>
+
+  <!-- bandeau bas : curseur temporel -->
+  <footer id="timeline">
+    <div class="tl-marks" id="tlMarks"></div>
+    <input id="tlRange" type="range" min="0" max="1000" value="500" step="1"
+           aria-label="Instant de l'éclipse">
+    <div class="tl-actions">
+      <button id="btnLive" class="chip">Maintenant</button>
+      <button id="btnMax" class="chip accent">Maximum</button>
+      <button id="btnPlay" class="chip">▶ Rejouer</button>
+      <button id="btnMode" class="chip">Vue carte</button>
+    </div>
+  </footer>
+
+  <!-- alerte de calage boussole -->
+  <div id="calibNote" class="calib-note" hidden>
+    Boussole non calée&nbsp;: vise le Soleil réel et appuie sur
+    <button id="btnCalibInline" class="link">Caler</button>
+  </div>
+</main>
+
+<!-- ------------------------------------------------------------ reglages -->
+<aside id="panel" class="panel" hidden>
+  <div class="panel-inner">
+    <div class="panel-head">
+      <h2>Réglages</h2>
+      <button id="btnClosePanel" class="icon-btn" aria-label="Fermer">✕</button>
+    </div>
+
+    <section>
+      <h3>Position d'observation</h3>
+      <button id="btnGeo" class="ghost small">Utiliser ma position GPS</button>
+      <div class="grid2">
+        <label>Latitude <input id="inLat" type="number" step="0.0001" inputmode="decimal"></label>
+        <label>Longitude <input id="inLon" type="number" step="0.0001" inputmode="decimal"></label>
+        <label>Altitude (m) <input id="inElev" type="number" step="1" inputmode="numeric"></label>
+        <label>Date <input id="inDate" type="date"></label>
+      </div>
+      <p id="geoNote" class="note"></p>
+    </section>
+
+    <section>
+      <h3>Boussole</h3>
+      <p class="note">
+        Le magnétomètre du téléphone est rarement juste. Vise le Soleil réel
+        (ou un repère dont tu connais la direction), centre-le, puis calibre.
+      </p>
+      <button id="btnCalibSun" class="ghost small">Caler sur le Soleil visé</button>
+      <button id="btnCalibReset" class="ghost small">Remettre à zéro</button>
+      <label class="slider">
+        Correction de cap : <output id="outOffset">0°</output>
+        <input id="inOffset" type="range" min="-45" max="45" step="0.5" value="0">
+      </label>
+    </section>
+
+    <section>
+      <h3>Champ de la caméra</h3>
+      <p class="note">
+        À ajuster si les repères ne collent pas aux bords. Une valeur trop
+        faible « étale » le ciel, trop forte le comprime.
+      </p>
+      <label class="slider">
+        Champ horizontal : <output id="outFov">65°</output>
+        <input id="inFov" type="range" min="35" max="95" step="1" value="65">
+      </label>
+    </section>
+
+    <section>
+      <h3>Circonstances locales</h3>
+      <div id="details" class="details"></div>
+    </section>
+
+    <p class="fineprint">
+      Positions calculées localement (Meeus, <em>Astronomical Algorithms</em>).
+      Précision typique&nbsp;: quelques secondes d'arc, soit très en deçà de la
+      précision de la boussole d'un téléphone.
+    </p>
+  </div>
+</aside>
+
+<div id="toast" class="toast" hidden></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
