@@ -1,0 +1,24 @@
+# Config Apache, utile uniquement quand l'app est servie par Apache dans un
+# sous-chemin (par exemple https://doxai.ch/eclipse/). Inerte ailleurs :
+# GitHub Pages, nginx et les serveurs de developpement ignorent ce fichier.
+#
+# Le dossier doit contenir de vrais fichiers : sous WordPress, les regles
+# `RewriteCond %{REQUEST_FILENAME} !-f` et `!-d` du .htaccess racine laissent
+# alors passer la requete sans la renvoyer vers index.php.
+
+# Apache ne connait pas .webmanifest par defaut : sans ca le manifeste est
+# servi en type generique et l'ajout a l'ecran d'accueil se degrade.
+AddType application/manifest+json .webmanifest
+AddType image/svg+xml .svg
+
+<IfModule mod_headers.c>
+  # Ne jamais figer le service worker dans le cache HTTP : c'est lui qui
+  # decide de la fraicheur du reste, une version epinglee bloquerait toute
+  # mise a jour ulterieure.
+  <Files "sw.js">
+    Header set Cache-Control "no-cache, max-age=0"
+  </Files>
+</IfModule>
+
+# Pas d'index de repertoire.
+Options -Indexes
