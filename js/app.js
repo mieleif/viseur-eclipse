@@ -1,17 +1,19 @@
 /**
  * app.js — colle entre les ephemerides, les capteurs et l'ecran.
  */
-import { circumstances, findEclipse } from './astro.js';
+import { circumstances, findEclipse, findEclipses } from './astro.js';
 import {
   OrientationSensor, startCamera, stopCamera,
   vectorFromAzAlt, azAltFromVector, project, cameraAxis,
 } from './ar.js';
 
 const $ = (id) => document.getElementById(id);
-const STORE_KEY = 'eclipse-toit/v1';
+const STORE_KEY = 'viseur-eclipse/v1';
 
+// Position de repli tant que l'utilisateur n'a pas donne la sienne. Elle n'a
+// rien de special : l'app cherche les eclipses visibles depuis le lieu courant,
+// quel qu'il soit.
 const DEFAULT_SITE = { lat: 46.5197, lon: 6.6323, elevation: 495 };
-const DEFAULT_DATE = '2026-08-12';
 
 const ROSE = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
   'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
@@ -30,7 +32,9 @@ const fmtTimeS = (d) => d
 
 const state = {
   site: { ...DEFAULT_SITE },
-  dateStr: DEFAULT_DATE,
+  siteKnown: false, // true des que l'utilisateur a fourni sa position
+  dateStr: null,    // jour (local) de l'eclipse selectionnee
+  eclipseList: [],  // eclipses a venir visibles depuis `site`
   eclipse: null,
   track: [],        // trajectoire echantillonnee
   keyPoints: [],
@@ -55,6 +59,7 @@ function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
     if (raw.site && Number.isFinite(raw.site.lat)) state.site = raw.site;
+    if (raw.siteKnown) state.siteKnown = true;
     if (raw.dateStr) state.dateStr = raw.dateStr;
     if (Number.isFinite(raw.fovH)) state.fovH = raw.fovH;
     if (Number.isFinite(raw.headingOffset)) {
@@ -68,6 +73,7 @@ function save() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       site: state.site,
+      siteKnown: state.siteKnown,
       dateStr: state.dateStr,
       fovH: state.fovH,
       headingOffset: sensor.headingOffset,
@@ -83,7 +89,55 @@ function localMidnight(dateStr) {
   return new Date(y, m - 1, d, 0, 0, 0); // minuit local
 }
 
+const localDateStr = (d) => {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
+const eclipseLabel = (e) => {
+  const jour = e.max.toLocaleDateString('fr-CH', { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${jour} — ${(e.bestVisible.obscuration * 100).toFixed(0)} % (${e.type})`;
+};
+
+/** Recherche les eclipses a venir visibles depuis la position courante. */
+function refreshEclipseList() {
+  state.eclipseList = findEclipses(state.site, new Date(), { years: 8, limit: 6 });
+  if (!state.dateStr) {
+    state.dateStr = state.eclipseList.length
+      ? localDateStr(state.eclipseList[0].max)
+      : localDateStr(new Date());
+  }
+  renderEclipseOptions();
+}
+
+function renderEclipseOptions() {
+  const opts = state.eclipseList.map((e) => ({
+    value: localDateStr(e.max), label: eclipseLabel(e),
+  }));
+  if (!opts.some((o) => o.value === state.dateStr)) {
+    opts.unshift({ value: state.dateStr, label: `${state.dateStr} — date choisie` });
+  }
+  for (const id of ['selEclipse', 'selEclipse2']) {
+    const sel = $(id);
+    if (!sel) continue;
+    sel.innerHTML = opts
+      .map((o) => `<option value="${o.value}">${o.label}</option>`).join('');
+    sel.value = state.dateStr;
+  }
+}
+
+function renderPosition() {
+  const el = $('introPos');
+  if (!el) return;
+  const s = state.site;
+  const coords = `${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}`;
+  el.textContent = state.siteKnown
+    ? `Position : ${coords} — altitude ${Math.round(s.elevation || 0)} m`
+    : `Position par défaut : ${coords}. Heures et directions dépendent du lieu.`;
+}
+
 function recompute() {
+  if (!state.dateStr) state.dateStr = localDateStr(new Date());
   const day = localMidnight(state.dateStr);
   state.eclipse = findEclipse(day, state.site);
 
@@ -141,39 +195,52 @@ function setTime(d) {
 const crossingLabel = (e) =>
   (e.crossingKind === 'coucher' ? 'Coucher du Soleil' : 'Lever du Soleil');
 
+/**
+ * Le verdict porte sur ce qui est reellement observable, pas sur le maximum
+ * theorique : une eclipse a 76 % dont le pic tombe apres le coucher ne vaut
+ * que ce qu'on en voit avant.
+ */
 function verdictFor() {
   const e = state.eclipse;
   if (!e) {
-    return { cls: '', text: `Aucune éclipse solaire visible depuis ce lieu le ${state.dateStr}.` };
+    return { cls: '', text: `Aucune éclipse solaire ce jour-là depuis ce lieu.` };
   }
-  const c = e.maxCircumstances;
-  const dir = compass(c.sun.az);
-  const pct = (c.obscuration * 100).toFixed(0);
-
-  if (c.sun.altApparent <= 0) {
-    const last = e.observableUntil;
+  if (!e.bestVisible) {
     return {
       cls: 'bad',
-      text: `Le maximum a lieu sous l'horizon. Visible seulement jusqu'à ${fmtTime(last)}.`,
+      text: `Éclipse ${e.type}, mais entièrement sous l'horizon d'ici : rien à observer.`,
     };
   }
-  if (c.sun.altApparent < 6) {
+
+  const b = e.bestVisible;
+  const dir = compass(b.sun.az);
+  const pct = (b.obscuration * 100).toFixed(0);
+  const alt = b.sun.altApparent;
+
+  // le pic est-il ampute par l'horizon ?
+  const tronquee = e.maxCircumstances.obscuration - b.obscuration > 0.01;
+  const rappel = tronquee
+    ? ` Le maximum théorique (${(e.maxCircumstances.obscuration * 100).toFixed(0)} %) ` +
+      `tombe sous l'horizon : le mieux visible est à ${fmtTime(b.date)}.`
+    : '';
+
+  if (alt < 6) {
     return {
       cls: 'warn',
-      text: `${pct} % du Soleil couvert, mais à seulement ${c.sun.altApparent.toFixed(1)}° ` +
-        `de hauteur vers le ${dir} (${c.sun.az.toFixed(0)}°) : il faut un horizon totalement dégagé.`,
+      text: `${pct} % du Soleil couvert, mais à seulement ${alt.toFixed(1)}° de hauteur ` +
+        `vers le ${dir} (${b.sun.az.toFixed(0)}°) : il faut un horizon totalement dégagé.` + rappel,
     };
   }
-  if (c.sun.altApparent < 15) {
+  if (alt < 15) {
     return {
       cls: 'warn',
-      text: `${pct} % du Soleil couvert, à ${c.sun.altApparent.toFixed(1)}° de hauteur ` +
-        `vers le ${dir} (${c.sun.az.toFixed(0)}°). Vérifie les obstacles bas.`,
+      text: `${pct} % du Soleil couvert, à ${alt.toFixed(1)}° de hauteur vers le ${dir} ` +
+        `(${b.sun.az.toFixed(0)}°). Vérifie les obstacles bas.` + rappel,
     };
   }
   return {
     cls: 'ok',
-    text: `${pct} % du Soleil couvert, à ${c.sun.altApparent.toFixed(0)}° de hauteur vers le ${dir}.`,
+    text: `${pct} % du Soleil couvert, à ${alt.toFixed(0)}° de hauteur vers le ${dir}.` + rappel,
   };
 }
 
@@ -200,6 +267,7 @@ function renderStaticUI() {
 
   renderDetails();
   renderIntroSummary();
+  renderPosition();
 }
 
 function renderDetails() {
@@ -219,6 +287,9 @@ function renderDetails() {
     ['Magnitude max', c.magnitude.toFixed(3)],
     ['Hauteur au max', `${c.sun.altApparent.toFixed(2)}°`],
     ['Azimut au max', `${c.sun.az.toFixed(2)}° (${compass(c.sun.az)})`],
+    e.bestVisible && ['Meilleur instant visible',
+      `${fmtTimeS(e.bestVisible.date)} — ${(e.bestVisible.obscuration * 100).toFixed(1)} % ` +
+      `à ${e.bestVisible.sun.altApparent.toFixed(1)}°`],
   ].filter(Boolean);
   box.innerHTML = '<dl>' + rows
     .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('') + '</dl>';
@@ -228,16 +299,20 @@ function renderIntroSummary() {
   const e = state.eclipse;
   const box = $('introSummary');
   if (!e) { box.hidden = true; return; }
-  const c = e.maxCircumstances;
+  const b = e.bestVisible || e.maxCircumstances;
   const v = verdictFor();
+  const jour = localMidnight(state.dateStr)
+    .toLocaleDateString('fr-CH', { day: 'numeric', month: 'long', year: 'numeric' });
   box.hidden = false;
   box.innerHTML =
-    `<h4>Éclipse ${e.type} du ${localMidnight(state.dateStr).toLocaleDateString('fr-CH', { day: 'numeric', month: 'long', year: 'numeric' })}</h4>` +
+    `<h4>Éclipse ${e.type} du ${jour}</h4>` +
     '<dl>' +
     `<dt>Début</dt><dd>${fmtTime(e.c1)}</dd>` +
-    `<dt>Maximum</dt><dd>${fmtTime(e.max)} — ${(c.obscuration * 100).toFixed(0)} % couvert</dd>` +
+    `<dt>Maximum</dt><dd>${fmtTime(e.max)} — ` +
+    `${(e.maxCircumstances.obscuration * 100).toFixed(0)} % couvert</dd>` +
     (e.horizonCrossing ? `<dt>${crossingLabel(e)}</dt><dd>${fmtTime(e.horizonCrossing)}</dd>` : '') +
-    `<dt>Direction</dt><dd>${compass(c.sun.az)} — ${c.sun.az.toFixed(0)}°, hauteur ${c.sun.altApparent.toFixed(1)}°</dd>` +
+    `<dt>Direction</dt><dd>${compass(b.sun.az)} — ${b.sun.az.toFixed(0)}°, ` +
+    `hauteur ${b.sun.altApparent.toFixed(1)}°</dd>` +
     '</dl>' +
     `<p class="flag ${v.cls === 'ok' ? '' : 'warn'}">${v.text}</p>`;
 }
@@ -595,8 +670,8 @@ function drawPhaseInset() {
 let frameErrorLogged = false;
 
 function tick() {
-  // Une exception isolee ne doit pas figer definitivement l'affichage : sur un
-  // toit, une app gelee est inutilisable et on ne peut pas la deboguer.
+  // Une exception isolee ne doit pas figer definitivement l'affichage : sur le
+  // terrain, une app gelee est inutilisable et on ne peut pas la deboguer.
   try {
     if (state.live) {
       const now = new Date();
@@ -740,7 +815,16 @@ function wire() {
     save();
   });
 
-  const onSite = () => {
+  // Changer de lieu change la liste des eclipses observables : on la rebatit.
+  const applySite = () => {
+    state.siteKnown = true;
+    save();
+    syncInputs();
+    refreshEclipseList();
+    recompute();
+  };
+
+  const onSiteFields = () => {
     const lat = Number($('inLat').value), lon = Number($('inLon').value);
     const elev = Number($('inElev').value);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
@@ -748,15 +832,32 @@ function wire() {
       toast('Coordonnées hors bornes.', true); return;
     }
     state.site = { lat, lon, elevation: Number.isFinite(elev) ? elev : 0 };
-    state.dateStr = $('inDate').value || DEFAULT_DATE;
-    save();
-    recompute();
+    applySite();
   };
-  for (const id of ['inLat', 'inLon', 'inElev', 'inDate']) {
-    $(id).addEventListener('change', onSite);
+  for (const id of ['inLat', 'inLon', 'inElev']) {
+    $(id).addEventListener('change', onSiteFields);
   }
 
-  $('btnGeo').addEventListener('click', () => {
+  $('inDate').addEventListener('change', () => {
+    if (!$('inDate').value) return;
+    state.dateStr = $('inDate').value;
+    save();
+    renderEclipseOptions();
+    recompute();
+  });
+
+  const onEclipsePicked = (ev) => {
+    state.dateStr = ev.target.value;
+    save();
+    syncInputs();
+    renderEclipseOptions();
+    recompute();
+  };
+  for (const id of ['selEclipse', 'selEclipse2']) {
+    $(id).addEventListener('change', onEclipsePicked);
+  }
+
+  const requestGeo = () => {
     if (!navigator.geolocation) { toast('Géolocalisation indisponible.', true); return; }
     $('geoNote').textContent = 'Localisation en cours…';
     navigator.geolocation.getCurrentPosition(
@@ -766,16 +867,20 @@ function wire() {
           lon: pos.coords.longitude,
           elevation: Number.isFinite(pos.coords.altitude) ? pos.coords.altitude : 0,
         };
-        syncInputs();
-        save();
-        recompute();
-        $('geoNote').textContent =
-          `Position obtenue (±${Math.round(pos.coords.accuracy)} m).`;
+        applySite();
+        const msg = `Position obtenue (±${Math.round(pos.coords.accuracy)} m).`;
+        $('geoNote').textContent = msg;
+        toast(msg);
       },
-      (err) => { $('geoNote').textContent = `Échec : ${err.message}`; },
+      (err) => {
+        $('geoNote').textContent = `Échec : ${err.message}`;
+        toast(`Localisation impossible : ${err.message}`, true);
+      },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
     );
-  });
+  };
+  $('btnGeo').addEventListener('click', requestGeo);
+  $('btnGeoIntro').addEventListener('click', requestGeo);
 
   window.addEventListener('resize', resizeCanvas);
 }
@@ -799,6 +904,7 @@ canvas = $('overlay');
 ctx = canvas.getContext('2d');
 load();
 wire();
+refreshEclipseList();
 syncInputs();
 recompute();
 resizeCanvas();

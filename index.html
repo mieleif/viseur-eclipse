@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#0b0d14">
-<meta name="description" content="Ou sera l'eclipse dans mon ciel ? Realite augmentee : trajectoire du Soleil eclipse projetee sur la camera du telephone.">
-<title>Éclipse sur mon toit</title>
+<meta name="description" content="Ou sera l'eclipse dans mon ciel ? Realite augmentee : la trajectoire du Soleil eclipse projetee sur la camera du telephone, depuis n'importe quel lieu.">
+<title>Viseur d'éclipse</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -18,11 +18,20 @@
 <!-- ------------------------------------------------ ecran d'accueil -->
 <section id="intro" class="screen">
   <div class="intro-inner">
-    <h1>Éclipse sur mon toit</h1>
+    <h1>Viseur d'éclipse</h1>
     <p class="lede">
       Pointe ton téléphone vers le ciel : l'app trace la trajectoire du Soleil
-      éclipsé et te dit si un toit, un arbre ou un immeuble te la cachera.
+      éclipsé et te montre si un obstacle te la cachera, depuis l'endroit exact
+      où tu comptes observer.
     </p>
+
+    <div class="field">
+      <label for="selEclipse">Éclipse</label>
+      <select id="selEclipse"></select>
+    </div>
+
+    <p id="introPos" class="posline"></p>
+    <button id="btnGeoIntro" class="ghost small">Utiliser ma position</button>
 
     <div id="introSummary" class="summary" hidden></div>
 
@@ -31,8 +40,8 @@
 
     <p class="fineprint">
       La caméra et les capteurs restent sur l'appareil : aucune donnée n'est
-      envoyée nulle part. Ne regarde jamais le Soleil sans lunettes éclipse
-      certifiées ISO&nbsp;12312-2.
+      envoyée nulle part. Ne regarde jamais le Soleil, même largement éclipsé,
+      sans lunettes d'éclipse certifiées ISO&nbsp;12312-2.
     </p>
   </div>
 </section>
@@ -96,6 +105,18 @@
       <h2>Réglages</h2>
       <button id="btnClosePanel" class="icon-btn" aria-label="Fermer">✕</button>
     </div>
+
+    <section>
+      <h3>Éclipse</h3>
+      <div class="field">
+        <select id="selEclipse2"></select>
+      </div>
+      <p class="note">
+        Liste des éclipses solaires observables depuis la position ci-dessous,
+        dans les huit prochaines années. Pour une autre date, la renseigner
+        directement.
+      </p>
+    </section>
 
     <section>
       <h3>Position d'observation</h3>

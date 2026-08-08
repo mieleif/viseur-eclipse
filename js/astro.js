@@ -480,12 +480,31 @@ export function findEclipse(dayStartUtc, site, { windowHours = 24, stepMinutes =
     }
   }
 
+  // Meilleur instant reellement observable : le maximum ne sert a rien s'il
+  // tombe sous l'horizon. On retient la plus forte obscuration atteinte
+  // pendant que le Soleil est leve.
+  let bestVisible = null;
+  {
+    const n = 200;
+    for (let i = 0; i <= n; i++) {
+      const cc = circumstances(new Date(spanStart + ((spanEnd - spanStart) * i) / n), site);
+      if (cc.sun.altApparent > 0 && cc.obscuration > 0
+        && (!bestVisible || cc.obscuration > bestVisible.obscuration)) {
+        bestVisible = cc;
+      }
+    }
+  }
+
   return {
     type,
     c1, c2, max: maxDate, c3, c4,
     maxCircumstances: max,
     /** l'eclipse est-elle au moins partiellement au-dessus de l'horizon ? */
     sunAboveHorizonAtMax: max.sun.altApparent > 0,
+    /** circonstances du meilleur instant au-dessus de l'horizon, ou null */
+    bestVisible,
+    /** quelque chose est-il observable depuis ce site ? */
+    visible: bestVisible !== null,
     /** instant ou le Soleil passe l'horizon pendant l'eclipse (ou null) */
     horizonCrossing,
     crossingKind,
@@ -493,6 +512,72 @@ export function findEclipse(dayStartUtc, site, { windowHours = 24, stepMinutes =
     observableUntil: crossingKind === 'coucher' ? horizonCrossing : c4,
     observableFrom: crossingKind === 'lever' ? horizonCrossing : c1,
   };
+}
+
+/* ------------------------------------------- recherche d'eclipses a venir */
+
+/**
+ * Elongation geocentrique Soleil-Lune, en degres. Rapide : sert seulement a
+ * reperer les nouvelles lunes serrees, candidates a une eclipse.
+ */
+function geocentricElongation(ms) {
+  const jde = jdeFromJd(julianDay(new Date(ms)));
+  const s = sunPosition(jde);
+  const m = moonPosition(jde);
+  const c = cos(m.beta) * cos(m.lambda - s.lambda);
+  return Math.acos(Math.min(1, Math.max(-1, c))) * RAD;
+}
+
+/**
+ * Cherche les eclipses solaires observables depuis un site donne.
+ *
+ * On balaie le temps par pas de 6 h pour reperer les minima d'elongation
+ * (les nouvelles lunes), on affine chaque minimum, et on ne calcule les
+ * circonstances locales — couteuses — que pour les conjonctions assez serrees
+ * pour produire une eclipse quelque part sur Terre.
+ *
+ * @returns {Array} eclipses au moins partiellement visibles, dans l'ordre
+ */
+export function findEclipses(site, from, { years = 8, limit = 6 } = {}) {
+  const out = [];
+  const stepMs = 6 * 3600000;
+  const endMs = from.getTime() + years * 365.25 * 86400000;
+
+  // au-dela, la Lune ne peut pas mordre le Soleil, meme vue du sol :
+  // demi-diametres (~0.56 deg cumules) + parallaxe lunaire (~1 deg au plus)
+  const CANDIDATE_MAX_ELONGATION = 1.6;
+
+  const refineMin = (a, b) => {
+    const phi = (Math.sqrt(5) - 1) / 2;
+    let lo = a, hi = b;
+    for (let i = 0; i < 40; i++) {
+      const x1 = hi - phi * (hi - lo);
+      const x2 = lo + phi * (hi - lo);
+      if (geocentricElongation(x1) < geocentricElongation(x2)) hi = x2; else lo = x1;
+    }
+    return (lo + hi) / 2;
+  };
+
+  let prev2 = null, prev = null;
+  for (let ms = from.getTime(); ms <= endMs; ms += stepMs) {
+    const e = geocentricElongation(ms);
+    // minimum local dans la sequence echantillonnee, a l'instant (ms - stepMs)
+    if (prev2 !== null && prev < prev2 && prev <= e && prev < 8) {
+      const tMin = refineMin(ms - 2 * stepMs, ms);
+      if (geocentricElongation(tMin) < CANDIDATE_MAX_ELONGATION) {
+        const eclipse = findEclipse(
+          new Date(tMin - 5 * 3600000), site,
+          { windowHours: 10, stepMinutes: 2 },
+        );
+        if (eclipse && eclipse.visible) {
+          out.push(eclipse);
+          if (out.length >= limit) break;
+        }
+      }
+    }
+    prev2 = prev; prev = e;
+  }
+  return out;
 }
 
 /** Echantillonne l'eclipse pour tracer une courbe / une timeline. */

@@ -4,7 +4,7 @@
     {
       "name": "eclipse",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["-y", "serve", "-l", "5174", "."],
+      "runtimeArgs": ["-y", "serve", "-l", "5174", "C:/Users/Leif/Desktop/Pro/eclipse-toit"],
       "port": 5174
     }
   ]

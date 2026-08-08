@@ -14,6 +14,13 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
+/*
+ * Indispensable : une regle d'auteur posant `display` (ici `.screen`) l'emporte
+ * sur la regle `[hidden] { display: none }` du navigateur. Sans ce garde-fou,
+ * masquer un element via sa propriete `hidden` reste sans effet.
+ */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -84,6 +91,24 @@ button.link {
 }
 
 .fineprint { color: var(--muted); font-size: .8rem; margin-top: 1.25rem; }
+
+.field { margin-bottom: .75rem; }
+.field label {
+  display: block; margin-bottom: 4px;
+  font-size: .7rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted);
+}
+select {
+  width: 100%;
+  padding: 12px 12px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: #0b0e17; color: var(--ink);
+  font: inherit;
+}
+.posline {
+  color: var(--muted); font-size: .82rem;
+  margin: 0 0 .5rem; font-variant-numeric: tabular-nums;
+}
 
 /* ------------------------------------------------------- vue principale */
 

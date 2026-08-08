@@ -1,12 +1,13 @@
 /**
- * Service worker : l'app doit fonctionner sans reseau (toit, campagne).
+ * Service worker : l'app doit fonctionner sans reseau — on observe rarement
+ * une eclipse depuis un endroit bien couvert.
  *
  * Strategie « reseau d'abord, cache en secours ». Le cache d'abord serait plus
  * rapide, mais il fige la version installee : sans bump manuel de CACHE
  * l'utilisateur ne recevrait plus jamais de correction. Ici on garde la
  * fraicheur en ligne et la disponibilite hors ligne.
  */
-const CACHE = 'eclipse-toit-v1';
+const CACHE = 'viseur-eclipse-v2';
 const SHELL = [
   './',
   './index.html',
